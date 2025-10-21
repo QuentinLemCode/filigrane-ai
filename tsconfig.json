@@ -1,10 +1,42 @@
 {
-    "compilerOptions": {
-        "noEmit": true,
-        "target": "es2023",
-        "module": "esnext",
-        "erasableSyntaxOnly": true,
-        "verbatimModuleSyntax": true,
-        "strict": true
-    }
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "lib": [
+      "es2024",
+      "ESNext.Array",
+      "ESNext.Collection",
+      "ESNext.Iterator",
+      "ESNext.Promise"
+    ],
+    "module": "nodenext",
+    "target": "es2024",
+
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "moduleResolution": "node16",
+
+    "allowUnusedLabels": false,
+    "allowUnreachableCode": false,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "noImplicitReturns": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "isolatedModules": true,
+
+    "checkJs": true,
+    "verbatimModuleSyntax": true,
+
+    "noEmit": true,
+    "erasableSyntaxOnly": true,
+    // "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "outDir": "dist",
+  "exclude": ["node_modules", "dist"]
 }
