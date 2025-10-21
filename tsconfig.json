@@ -1,0 +1,10 @@
+{
+    "compilerOptions": {
+        "noEmit": true,
+        "target": "es2023",
+        "module": "esnext",
+        "erasableSyntaxOnly": true,
+        "verbatimModuleSyntax": true,
+        "strict": true
+    }
+}
