@@ -1,14 +1,13 @@
 {
-  "name": "filigrane",
+  "name": "filigrane-ai",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
   "scripts": {
-    "start": "node src/index.ts"
+    "start": "node --experimental-strip-types src/index.ts"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "QuentinLemCode",
+  "license": "AGPL-3.0-only",
   "type": "module",
   "dependencies": {
     "@google/genai": "^1.25.0",
