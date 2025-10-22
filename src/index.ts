@@ -5,6 +5,7 @@ import * as path from "path";
 import { exiftool } from "exiftool-vendored";
 import { GoogleGenAI } from "@google/genai";
 import sharp from "sharp";
+import inquirer from "inquirer";
 
 const INPUT_DIR = path.resolve(process.cwd(), "input");
 const OUTPUT_DIR = path.resolve(process.cwd(), "output");
@@ -37,18 +38,40 @@ async function listJpegs(dir: string): Promise<string[]> {
     .map((e: fs.Dirent) => e.name);
 }
 
+function detectMimeTypeFromBuffer(buf: Buffer): string {
+  // PNG signature: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  // JPEG signature: FF D8 FF
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return "image/jpeg";
+  }
+  return "application/octet-stream";
+}
+
 async function sendImageAndGetReturnedImage(
   genAI: GoogleGenAI,
-  filename: string,
-  imageBuffer: Buffer
+  promptText: string,
+  imageBuffer: Buffer,
+  mimeType: string
 ): Promise<Buffer | null> {
   const base64 = imageBuffer.toString("base64");
-  const mimeType = chooseMimeTypeFromFilename(filename);
 
   const result = await genAI.models.generateContent({
     model: MODEL_NAME,
     contents: [
-      { text: PROMPT_TEXT },
+      { text: promptText },
       { inlineData: { mimeType, data: base64 } },
     ],
   });
@@ -57,7 +80,7 @@ async function sendImageAndGetReturnedImage(
 
   // Look for inlineData image in the response.
   for (const part of parts ?? []) {
-    const inline = part?.inlineData;
+    const inline = (part as any)?.inlineData as { data?: string } | undefined;
     if (inline && typeof inline.data === "string") {
       return Buffer.from(inline.data, "base64");
     }
@@ -80,6 +103,36 @@ async function copyAllExifFromTo(
   ]);
 }
 
+async function promptMenu(
+  filename: string
+): Promise<"accept" | "comment" | "retry" | "skip"> {
+  const answers = await inquirer.prompt([
+    {
+      type: "list",
+      name: "choice",
+      message: `Fichier: ${filename}\nChoisir une option:`,
+      choices: [
+        { name: "accept", value: "accept" },
+        { name: "comment", value: "comment" },
+        { name: "retry", value: "retry" },
+        { name: "skip", value: "skip" },
+      ],
+    },
+  ]);
+  return answers.choice as "accept" | "comment" | "retry" | "skip";
+}
+
+async function promptComment(): Promise<string> {
+  const answers = await inquirer.prompt([
+    {
+      type: "input",
+      name: "comment",
+      message: "Entrez votre commentaire:",
+    },
+  ]);
+  return String(answers.comment ?? "").trim();
+}
+
 async function processOneFile(
   genAI: GoogleGenAI,
   filename: string
@@ -89,27 +142,70 @@ async function processOneFile(
 
   const inputBuffer = await fsp.readFile(inputPath);
 
-  const returnedBuffer = await sendImageAndGetReturnedImage(
-    genAI,
-    filename,
-    inputBuffer
-  );
-  if (!returnedBuffer) {
-    console.warn(`No image returned by model for: ${filename}`);
-    return;
-  }
+  // Maintain "context" by iteratively feeding the last generated image back to the model
+  // along with new instructions (comment or retry) until the user accepts.
+  let workingBuffer: Buffer = inputBuffer;
+  let workingMime: string = chooseMimeTypeFromFilename(filename);
+  let currentPrompt: string = PROMPT_TEXT;
 
-  // Convert the returned image (likely PNG) to JPEG before saving
-  const jpegBuffer = await sharp(returnedBuffer)
-    .jpeg({ quality: 95, mozjpeg: true })
-    .toBuffer();
+  // Interactive loop until accept
+  // Each iteration generates an image, saves it (with EXIF), then asks the user.
+  while (true) {
+    const returnedBuffer = await sendImageAndGetReturnedImage(
+      genAI,
+      currentPrompt,
+      workingBuffer,
+      workingMime
+    );
+    if (!returnedBuffer) {
+      console.warn(`No image returned by model for: ${filename}`);
+      return;
+    }
 
-  await fsp.writeFile(outputPath, jpegBuffer);
+    // Convert the returned image (likely PNG) to JPEG before saving
+    const jpegBuffer = await sharp(returnedBuffer)
+      .jpeg({ quality: 95, mozjpeg: true })
+      .toBuffer();
 
-  try {
-    await copyAllExifFromTo(inputPath, outputPath);
-  } catch (err) {
-    console.warn(`Failed to copy EXIF for ${filename}:`, err);
+    await fsp.writeFile(outputPath, jpegBuffer);
+
+    try {
+      await copyAllExifFromTo(inputPath, outputPath);
+    } catch (err) {
+      console.warn(`Failed to copy EXIF for ${filename}:`, err);
+    }
+
+    // Show menu and act based on choice
+    const choice = await promptMenu(filename);
+    if (choice === "accept") {
+      // Context can be destroyed; move on to next photo
+      break;
+    }
+    if (choice === "comment") {
+      const comment = await promptComment();
+      // Keep context by feeding the last generated image back into the model
+      workingBuffer = returnedBuffer;
+      workingMime = detectMimeTypeFromBuffer(returnedBuffer);
+      currentPrompt = `${currentPrompt}\n${comment}`;
+      continue;
+    }
+    if (choice === "retry") {
+      // Retry with NEW context: re-upload the original input image with base prompt
+      workingBuffer = inputBuffer;
+      workingMime = chooseMimeTypeFromFilename(filename);
+      currentPrompt = PROMPT_TEXT;
+      continue;
+    }
+    if (choice === "skip") {
+      // Delete the just-generated output and move to next
+      try {
+        await fsp.rm(outputPath, { force: true });
+      } catch {}
+      try {
+        await fsp.rm(inputPath, { force: true });
+      } catch {}
+      break;
+    }
   }
 }
 

@@ -4,8 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "tsc": "tsc"
+    "start": "node src/index.ts"
   },
   "keywords": [],
   "author": "",
@@ -13,9 +12,11 @@
   "type": "module",
   "dependencies": {
     "@google/genai": "^1.25.0",
+    "@types/inquirer": "^9.0.9",
     "@types/node": "^24.9.1",
     "dotenv": "^17.2.3",
     "exiftool-vendored": "^31.1.0",
+    "inquirer": "^12.10.0",
     "sharp": "0.34.4",
     "typescript": "^5.9.3"
   }
